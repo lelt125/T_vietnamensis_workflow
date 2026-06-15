@@ -12,20 +12,20 @@ seqkit:
 busco:
   lineage: eukaryota_odb12
   download_path: databases/busco
-  threads: 16
-  mem_gb: 24
-  java_heap: 12g
+  threads: 12
+  mem_gb: 12
+  java_heap: 4g
 
 meryl:
   kmer: 31
 
-  count_threads: 16
-  count_mem_gb: 16
+  count_threads: 12
+  count_mem_gb: 12
 
-  merge_threads: 16
-  merge_mem_gb: 16
+  merge_threads: 12
+  merge_mem_gb: 12
 
 merqury:
-  threads: 16
-  mem_gb: 16
-  java_heap: 8g
+  threads: 12
+  mem_gb: 12
+  java_heap: 4g
