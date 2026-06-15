@@ -12,14 +12,14 @@ seqkit:
 busco:
   lineage: vertebrata_odb12
   download_path: databases/busco
-  threads: 24
+  threads: 32
   mem_gb: 200
   java_heap: 128g
 
 meryl:
   kmer: 31
 
-  count_threads: 20
+  count_threads: 32
   count_mem_gb: 300
 
   merge_threads: 60
