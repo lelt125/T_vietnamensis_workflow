@@ -1,0 +1,1 @@
+snakemake -s Snakefile --configfile config_production.yaml --cores 60 -p -n
