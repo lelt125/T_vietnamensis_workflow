@@ -1,0 +1,31 @@
+run_name: production_run
+
+results_base: data/2024_Tylototriton_vietnamensis_Wild_Genomes/Linh_Analysis/results
+
+assemblies_csv: data/2024_Tylototriton_vietnamensis_Wild_Genomes/Linh_Analysis/metadata/assemblies.csv
+
+hifi_reads_dir: /home/lehoanglinh/project/T_vietnamensis/data/2024_Tylototriton_vietnamensis_Wild_Genomes/De_novo
+
+seqkit:
+  threads: 8
+
+busco:
+  lineage: vertebrata_odb12
+  download_path: databases/busco
+  threads: 24
+  mem_gb: 200
+  java_heap: 128g
+
+meryl:
+  kmer: 31
+
+  count_threads: 20
+  count_mem_gb: 300
+
+  merge_threads: 60
+  merge_mem_gb: 900
+
+merqury:
+  threads: 60
+  mem_gb: 900
+  java_heap: 64g

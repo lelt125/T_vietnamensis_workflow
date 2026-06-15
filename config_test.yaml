@@ -1,0 +1,31 @@
+run_name: test_5_records
+
+results_base: data/2024_Tylototriton_vietnamensis_Wild_Genomes/tests/results
+
+assemblies_csv: data/2024_Tylototriton_vietnamensis_Wild_Genomes/tests/metadata/assemblies_test.csv
+
+hifi_reads_dir: data/2024_Tylototriton_vietnamensis_Wild_Genomes/tests/data/hifi_reads_subset
+
+seqkit:
+  threads: 4
+
+busco:
+  lineage: eukaryota_odb12
+  download_path: databases/busco
+  threads: 16
+  mem_gb: 24
+  java_heap: 12g
+
+meryl:
+  kmer: 31
+
+  count_threads: 16
+  count_mem_gb: 16
+
+  merge_threads: 16
+  merge_mem_gb: 16
+
+merqury:
+  threads: 16
+  mem_gb: 16
+  java_heap: 8g
