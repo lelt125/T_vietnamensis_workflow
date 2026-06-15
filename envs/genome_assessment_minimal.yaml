@@ -1,0 +1,34 @@
+name: genome_assessment
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - kmc=3.2.4
+  - purge_dups=1.2.5
+  - minimap2
+  - repeatmodeler
+  - yahs=1.2.2
+  - pairtools
+  - seqkit
+  - openpyxl
+  - python=3.11
+  - mashmap=3.1.3
+  - pandas
+  - bedtools
+  - mummer4
+  - nanoq
+  - gfastats
+  - samtools
+  - nanoplot
+  - merqury
+  - busco=6.0.0
+  - repeatmasker
+  - biopython
+  - chopper
+  - cooler=0.10.4
+  - bwa-mem2=2.2.1
+  - blis
+  - tree
+  - snakemake
+prefix: /home/lehoanglinh/miniconda3/envs/genome_assessment

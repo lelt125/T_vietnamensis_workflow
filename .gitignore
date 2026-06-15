@@ -1,0 +1,5 @@
+.snakemake
+data/
+databases/
+results/
+logs/
