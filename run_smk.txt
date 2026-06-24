@@ -1,1 +1,3 @@
-snakemake -s Snakefile --configfile config_production.yaml --cores 60 -p -n
+ snakemake -s genome_qc.smk --configfile config_test.yaml --cores 12 --resources mem_gb=12 -p -n
+ 
+ snakemake -s genome_qc.smk --configfile config_production.yaml --cores 64 --resources mem_gb=600 -p -n

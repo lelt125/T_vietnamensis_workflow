@@ -11,6 +11,7 @@ seqkit:
 
 busco:
   lineage: eukaryota_odb12
+  valid_lineages_file: databases/busco/busco_lineages.txt
   download_path: databases/busco
   threads: 12
   mem_gb: 12
@@ -29,3 +30,55 @@ merqury:
   threads: 12
   mem_gb: 12
   java_heap: 4g
+
+minimap2_read_mapping:
+  map_threads: 8
+  map_mem_gb: 12
+  pigz_threads: 4
+
+purge_dups:
+  pbcstat_mem_gb: 12
+  pbcstat_extra: ""
+
+  self_align_threads: 8
+  self_align_mem_gb: 12
+
+  purge_threads: 4
+  purge_mem_gb: 12
+
+  purge_extra: "-2"
+  get_seqs_mode: "-e"
+  pigz_threads: 4
+
+purge_dups_tests:
+  cutoff_5_30_90:
+    low: 5
+    mid: 30
+    high: 90
+    get_seqs_mode: "-e"
+
+  cutoff_5_35_90:
+    low: 5
+    mid: 35
+    high: 90
+    get_seqs_mode: "-e"
+
+  cutoff_5_40_90:
+    low: 5
+    mid: 40
+    high: 90
+    get_seqs_mode: "-e"
+
+minimap2_bam_mapping:
+  map_threads: 8
+  sort_threads: 4
+  map_mem_gb: 12
+  sort_mem: 1G
+
+  merge_threads: 8
+  merge_mem_gb: 12
+
+mosdepth:
+  threads: 8
+  mem_gb: 12
+  extra: "--fast-mode --no-per-base"

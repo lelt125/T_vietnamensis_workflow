@@ -11,6 +11,7 @@ seqkit:
 
 busco:
   lineage: vertebrata_odb12
+  valid_lineages_file: databases/busco/busco_lineages.txt
   download_path: databases/busco
   threads: 32
   mem_gb: 200
@@ -22,10 +23,75 @@ meryl:
   count_threads: 32
   count_mem_gb: 300
 
-  merge_threads: 60
-  merge_mem_gb: 900
+  merge_threads: 64
+  merge_mem_gb: 600
 
 merqury:
-  threads: 60
-  mem_gb: 900
+  threads: 64
+  mem_gb: 600
   java_heap: 64g
+
+minimap2_read_mapping:
+  map_threads: 32
+  map_mem_gb: 300
+  pigz_threads: 4
+
+purge_dups:
+  pbcstat_mem_gb: 80
+  pbcstat_extra: ""
+
+  self_align_threads: 48
+  self_align_mem_gb: 500
+
+  purge_threads: 12
+  purge_mem_gb: 200
+
+  purge_extra: "-2"
+  get_seqs_mode: "-e"
+  pigz_threads: 4
+
+purge_dups_tests:
+  cutoff_5_15_90:
+    low: 5
+    mid: 15
+    high: 90
+    get_seqs_mode: ""
+  cutoff_5_20_90:
+    low: 5
+    mid: 20
+    high: 90
+    get_seqs_mode: ""
+  cutoff_5_25_90:
+    low: 5
+    mid: 25
+    high: 90
+    get_seqs_mode: ""
+  cutoff_5_30_90:
+    low: 5
+    mid: 30
+    high: 90
+    get_seqs_mode: ""
+  cutoff_5_35_90:
+    low: 5
+    mid: 35
+    high: 90
+    get_seqs_mode: ""
+  cutoff_5_40_90:
+    low: 5
+    mid: 40
+    high: 90
+    get_seqs_mode: ""
+
+minimap2_bam_mapping:
+  map_threads: 32
+  sort_threads: 8
+  map_mem_gb: 200
+  sort_mem: 4G
+
+  merge_threads: 16
+  merge_mem_gb: 100
+
+mosdepth:
+  threads: 16
+  mem_gb: 64
+  extra: "--fast-mode --no-per-base"
