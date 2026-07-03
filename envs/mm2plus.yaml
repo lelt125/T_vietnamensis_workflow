@@ -1,0 +1,9 @@
+name: mm2plus
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - mm2plus
+  - minimap2
+  - pigz

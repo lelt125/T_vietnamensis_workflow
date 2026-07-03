@@ -153,34 +153,42 @@ rule purge_dups_self_align_assembly:
     input:
         split=f"{RESULTS_DIR}/purge_dups/{{sample}}/self_alignment/{{sample}}.split.fa"
     output:
-        paf=f"{RESULTS_DIR}/purge_dups/{{sample}}/self_alignment/{{sample}}.self.paf.gz"
+        paf=f"{RESULTS_DIR}/purge_dups/{{sample}}/self_alignment/{{sample}}.{config['purge_dups'].get('self_align_aligner', 'minimap2')}.{config['purge_dups'].get('self_align_preset', 'asm5')}.self.paf.gz"
     threads:
         config["purge_dups"]["self_align_threads"]
     resources:
         mem_gb=config["purge_dups"]["self_align_mem_gb"]
     params:
+        aligner=config["purge_dups"].get("self_align_aligner", "minimap2"),
+        preset=config["purge_dups"].get("self_align_preset", "asm5"),
+        extra=config["purge_dups"].get("self_align_extra", ""),
         pigz_threads=config["purge_dups"].get("pigz_threads", 4)
     log:
-        f"{RESULTS_DIR}/logs/purge_dups/minimap2/self_alignment/{{sample}}.log"
+        f"{RESULTS_DIR}/logs/purge_dups/{config['purge_dups'].get('self_align_aligner', 'minimap2')}/self_alignment/{{sample}}.{config['purge_dups'].get('self_align_preset', 'asm5')}.log"
+    conda:
+        "envs/mm2plus.yaml"
     shell:
         r"""
         mkdir -p $(dirname {output.paf})
         mkdir -p $(dirname {log})
 
-        minimap2 \
+        {params.aligner} \
             -t {threads} \
-            -x asm5 \
+            -x {params.preset} \
             -DP \
+            {params.extra} \
             {input.split} \
             {input.split} \
             2> {log} \
         | pigz -p {params.pigz_threads} -c > {output.paf}
+
+        test -s {output.paf}
         """
 
 
 rule purge_dups_call_dups:
     input:
-        self_paf=f"{RESULTS_DIR}/purge_dups/{{sample}}/self_alignment/{{sample}}.self.paf.gz",
+        self_paf=f"{RESULTS_DIR}/purge_dups/{{sample}}/self_alignment/{{sample}}.{config['purge_dups'].get('self_align_aligner', 'minimap2')}.{config['purge_dups'].get('self_align_preset', 'asm5')}.self.paf.gz",
         cov=f"{RESULTS_DIR}/purge_dups/{{sample}}/coverage/PB.base.cov",
         cutoffs=f"{RESULTS_DIR}/purge_dups/{{sample}}/{{test_id}}/cutoffs"
     output:
@@ -193,6 +201,8 @@ rule purge_dups_call_dups:
         extra=config["purge_dups"].get("purge_extra", "-2")
     log:
         f"{RESULTS_DIR}/logs/purge_dups/purge_dups/{{sample}}/{{test_id}}.log"
+    benchmark:
+        f"{RESULTS_DIR}/benchmarks/purge_dups/purge_dups/{{sample}}/{{test_id}}.tsv"
     shell:
         r"""
         mkdir -p $(dirname {output.bed})

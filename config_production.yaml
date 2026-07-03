@@ -42,9 +42,12 @@ purge_dups:
 
   self_align_threads: 48
   self_align_mem_gb: 500
+  self_align_preset: asm10
+  self_align_aligner: mm2plus
+  self_align_extra: ""
 
   purge_threads: 12
-  purge_mem_gb: 200
+  purge_mem_gb: 600
 
   purge_extra: "-2"
   get_seqs_mode: "-e"
@@ -54,31 +57,6 @@ purge_dups_tests:
   cutoff_5_15_90:
     low: 5
     mid: 15
-    high: 90
-    get_seqs_mode: ""
-  cutoff_5_20_90:
-    low: 5
-    mid: 20
-    high: 90
-    get_seqs_mode: ""
-  cutoff_5_25_90:
-    low: 5
-    mid: 25
-    high: 90
-    get_seqs_mode: ""
-  cutoff_5_30_90:
-    low: 5
-    mid: 30
-    high: 90
-    get_seqs_mode: ""
-  cutoff_5_35_90:
-    low: 5
-    mid: 35
-    high: 90
-    get_seqs_mode: ""
-  cutoff_5_40_90:
-    low: 5
-    mid: 40
     high: 90
     get_seqs_mode: ""
 
