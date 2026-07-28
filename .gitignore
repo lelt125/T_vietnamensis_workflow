@@ -1,5 +1,7 @@
 .snakemake
+.venv
 data/
 databases/
 results/
 logs/
+notebooks/busco_duplicated_contigs
