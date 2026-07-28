@@ -1,0 +1,67 @@
+---
+title: Summarizing Quarto data
+name: Linh Le
+---
+
+```{python}
+import sys
+from pathlib import Path
+
+from helper_scripts.summarizer import BuscoSummarizer, SeqkitSummarizer
+```
+
+
+Name directories where results are
+
+```{python}
+busco_dir = Path(
+    "data/2024_Tylototriton_vietnamensis_Wild_Genomes/Linh_Analysis/results/production_run/genome_qc/busco"
+)
+seqkit_dir = Path(
+    "data/2024_Tylototriton_vietnamensis_Wild_Genomes/Linh_Analysis/results/production_run/genome_qc/seqkit"
+)
+```
+
+```{python}
+vert_result_folders_list = [
+    "01_init_prim_hifi_asm",
+    "02_hifi_asm_filtered_fcs_gx",
+    "03_hifi_asm_filtered_fcs_adaptor",
+]
+
+vertebrata_run = BuscoSummarizer(
+    busco_dir, "vertebrata_odb12", vert_result_folders_list
+)
+busco_summary_condensed_df = vertebrata_run.condensed_summary()
+busco_summary_condensed_df
+```
+
+
+
+```{python}
+euk_result_folders_list = [
+    "03_hifi_asm_filtered_fcs_adaptor",
+    "04_hifi_asm_purged_dups_03_35_90_no_e",
+    "04_hifi_asm_purged_dups_05_15_90_asm10",
+]
+
+euk_run = BuscoSummarizer(busco_dir, "eukaryota_odb12", euk_result_folders_list)
+busco_summary_condensed_df = euk_run.condensed_summary()
+busco_summary_condensed_df
+```
+
+
+```{python}
+chosen_result_folders_list = [
+    "01_init_prim_hifi_asm",
+    "02_hifi_asm_filtered_fcs_gx",
+    "03_hifi_asm_filtered_fcs_adaptor",
+    "04_hifi_asm_purged_dups_05_15_90_asm5",
+]
+
+seqkit_run = SeqkitSummarizer(seqkit_dir, chosen_result_folders_list)
+seqkit_summary_df = seqkit_run.summary()
+seqkit_condensed_df = seqkit_run.condensed_summary()
+
+seqkit_condensed_df
+```
