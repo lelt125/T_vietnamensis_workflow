@@ -1,0 +1,96 @@
+---
+title: Analyze contaminants identified by FCS suite
+name: Linh Le
+---
+
+
+```{python}
+import gzip
+
+import pandas as pd
+
+from Bio import SeqIO
+```
+
+
+```{python}
+df = pd.read_csv(
+    "data/2024_Tylototriton_vietnamensis_Wild_Genomes/Linh_Analysis/contaminant_screening/fcs_gx_screening/T_vietnamensis_fcs_gx_contaminants.tabular.tsv",
+    sep="\t",
+    comment="#",
+)
+df.head()
+```
+
+
+```{python}
+taxa_counts = df["top_tax_name"].value_counts()
+taxa_counts
+```
+
+```{python}
+#| include: false
+#| eval: false
+bird_ids = set(df.loc[df["top_tax_name"] == "Taeniopygia guttata", "seq_id"])
+
+assembly = "data/2024_Tylototriton_vietnamensis_Wild_Genomes/Linh_Analysis/assemblies/01_init_prim_hifi_asm/T_vietnamensis.p_ctg.fa.gz"
+out_fa = "data/2024_Tylototriton_vietnamensis_Wild_Genomes/Linh_Analysis/contaminant_screening/T_vietnamensis_bird_contaminants.fa"
+
+lengths = {}
+
+
+def select(path, wanted):
+    with gzip.open(path, "rt") as handle:
+        for record in SeqIO.parse(handle, "fasta"):
+            if record.id in wanted:
+                lengths[record.id] = len(record.seq)
+                yield record
+
+
+n = SeqIO.write(select(assembly, bird_ids), out_fa, "fasta")
+
+missing = bird_ids - lengths.keys()
+if missing:
+    raise ValueError(
+        f"{len(missing)} of {len(bird_ids)} contigs not found in the assembly. "
+        f"First 5: {sorted(missing)[:5]}"
+    )
+
+print(f"{n} contigs written ({len(bird_ids)} expected)")
+```
+
+
+Next, run genome_qc.smk Snakemake workflow on the `T_vietnamensis_bird_contaminants.fa` file
+to get sequence stats, read depth and may be BUSCO. Later we will align it back to 
+the Pleurodeles watl genome if needed
+
+
+```{python}
+summary = pd.read_csv(
+    "data/2024_Tylototriton_vietnamensis_Wild_Genomes/Linh_Analysis/results/production_run/genome_qc/mosdepth/01_init_prim_hifi_asm/01_init_prim_hifi_asm.hifi.mosdepth.summary.txt",
+    sep="\t",
+)
+
+summary = summary[~summary["chrom"].str.endswith(("total", "_region"))]
+summary["flagged"] = summary["chrom"].isin(bird_ids)
+
+summary.groupby("flagged")["mean"].describe()
+```
+
+
+```{python}
+summary["bin"] = pd.cut(summary["length"], [0, 1e4, 5e4, 2e5, 1e6, 1e9])
+summary.groupby(["bin", "flagged"], observed=True)["mean"].median().unstack()
+```
+
+
+```{python}
+stats = (
+    summary.groupby(["bin", "flagged"], observed=True)
+    .agg(n=("mean", "size"), median_cov=("mean", "median"), bp=("length", "sum"))
+    .unstack()
+)
+stats
+
+summary.groupby("flagged")["length"].sum() / 1e9
+```

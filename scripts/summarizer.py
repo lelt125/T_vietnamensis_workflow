@@ -36,23 +36,22 @@ class BuscoSummarizer:
         "scaffold_n50",
         "contig_n50",
     ]
-    CONDENSED_COLS: ClassVar[list[str]] = [
-        "sample",
-        "complete_pct",
-        "single_copy_pct",
-        "multi_copy_pct",
-        "fragmented_pct",
-        "missing_pct",
-        "n_contigs",
-        "total_length_bp",
-        "contig_n50",
-    ]
+    CONDENSED_COLS: ClassVar[dict[str, str]] = {
+        "sample": "sample",
+        "complete_pct": "complete_%",
+        "single_copy_pct": "single_%",
+        "multi_copy_pct": "duplicated_%",
+        "fragmented_pct": "fragmented_%",
+        "missing_pct": "missing_%",
+        "n_contigs": "n_contigs",
+        "total_length_bp": "total_length_gb",
+        "contig_n50": "contig_n50_mb",
+    }
 
     def __init__(self, busco_dir: Path, lineage: str, run_names: list[str]):
         self.busco_dir = Path(busco_dir)
         self.lineage = lineage
         self.run_names = run_names
-
 
     def _json_path(self, run_name: str) -> Path:
         search_dir = self.busco_dir / run_name / self.lineage
@@ -60,7 +59,9 @@ class BuscoSummarizer:
         if not search_dir.is_dir():
             raise FileNotFoundError(f"BUSCO output directory not found: {search_dir}")
 
-        pattern = re.compile(rf"^short_summary\.specific\.{re.escape(self.lineage)}\..+\.json$")
+        pattern = re.compile(
+            rf"^short_summary\.specific\.{re.escape(self.lineage)}\..+\.json$"
+        )
         candidates = [p for p in search_dir.iterdir() if pattern.match(p.name)]
 
         if not candidates:
@@ -105,31 +106,42 @@ class BuscoSummarizer:
         return df
 
     def condensed_summary(self) -> pd.DataFrame:
-        df = self.summary()[self.CONDENSED_COLS].rename(
-            columns={
-                "complete_pct": "complete_%",
-                "single_copy_pct": "single_%",
-                "multi_copy_pct": "duplicated_%",
-                "fragmented_pct": "fragmented_%",
-                "missing_pct": "missing_%",
-                "total_length_bp": "total_length_gb",
-                "contig_n50": "contig_n50_mb",
-            }
-        )
+        # pyrefly: ignore [bad-assignment]
+        df: pd.DataFrame = self.summary()[list(self.CONDENSED_COLS)]
+        df = df.rename(columns=self.CONDENSED_COLS)
         df["total_length_gb"] = (df["total_length_gb"] / 1e9).round(2)
         df["contig_n50_mb"] = (df["contig_n50_mb"] / 1e6).round(2)
         return df
+
 
 class SeqkitSummarizer:
     """Parses seqkit stats TSVs across run folders into a summary dataframe."""
 
     NUMERIC_COLS: ClassVar[list[str]] = [
-        "num_seqs", "sum_len", "min_len", "avg_len", "max_len",
-        "Q1", "Q2", "Q3", "sum_gap", "N50", "N50_num",
-        "Q20(%)", "Q30(%)", "AvgQual", "GC(%)", "sum_n",
+        "num_seqs",
+        "sum_len",
+        "min_len",
+        "avg_len",
+        "max_len",
+        "Q1",
+        "Q2",
+        "Q3",
+        "sum_gap",
+        "N50",
+        "N50_num",
+        "Q20(%)",
+        "Q30(%)",
+        "AvgQual",
+        "GC(%)",
+        "sum_n",
     ]
     CONDENSED_COLS: ClassVar[list[str]] = [
-        "sample", "num_seqs", "sum_len", "N50", "avg_len", "GC(%)",
+        "sample",
+        "num_seqs",
+        "sum_len",
+        "N50",
+        "avg_len",
+        "GC(%)",
     ]
 
     def __init__(self, seqkit_dir: Path, run_names: list[str]):
@@ -156,9 +168,15 @@ class SeqkitSummarizer:
 
     def summary(self) -> pd.DataFrame:
         df = pd.DataFrame(self._parse_one(run_name) for run_name in self.run_names)
-        df[self.NUMERIC_COLS] = df[self.NUMERIC_COLS].apply(pd.to_numeric, errors="coerce")
+        df[self.NUMERIC_COLS] = df[self.NUMERIC_COLS].apply(
+            pd.to_numeric, errors="coerce"
+        )
 
-        cols = ["sample"] + [c for c in df.columns if c not in ("sample", "tsv_path")] + ["tsv_path"]
+        cols = (
+            ["sample"]
+            + [c for c in df.columns if c not in ("sample", "tsv_path")]
+            + ["tsv_path"]
+        )
         return df.loc[:, cols]
 
     def condensed_summary(self) -> pd.DataFrame:

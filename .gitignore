@@ -5,3 +5,5 @@ databases/
 results/
 logs/
 notebooks/busco_duplicated_contigs
+notebooks/output
+/.quarto/

@@ -27,8 +27,8 @@ meryl:
   merge_mem_gb: 600
 
 merqury:
-  threads: 64
-  mem_gb: 600
+  threads: 90
+  mem_gb: 800
   java_heap: 64g
 
 minimap2:
