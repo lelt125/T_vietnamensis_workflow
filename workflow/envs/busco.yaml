@@ -1,0 +1,6 @@
+# workflow/envs/busco.yaml
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - busco=6.1.0

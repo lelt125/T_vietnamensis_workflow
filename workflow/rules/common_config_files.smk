@@ -16,8 +16,7 @@ def load_assemblies(config):
 
     if assemblies["sample_id"].duplicated().any():
         dupes = assemblies.loc[
-            assemblies["sample_id"].duplicated(),
-            "sample_id"
+            assemblies["sample_id"].duplicated(), "sample_id"
         ].tolist()
         raise ValueError(f"Duplicate sample_id values in assemblies_csv: {dupes}")
 
@@ -25,14 +24,12 @@ def load_assemblies(config):
     fasta_by_sample = dict(zip(assemblies["sample_id"], assemblies["fasta"]))
 
     missing_fastas = [
-        fasta for fasta in fasta_by_sample.values()
-        if not Path(fasta).exists()
+        fasta for fasta in fasta_by_sample.values() if not Path(fasta).exists()
     ]
 
     if missing_fastas:
         raise ValueError(
-            "Some assembly FASTA files do not exist:\n"
-            + "\n".join(missing_fastas)
+            "Some assembly FASTA files do not exist:\n" + "\n".join(missing_fastas)
         )
 
     return assemblies, samples, fasta_by_sample
@@ -41,9 +38,7 @@ def load_assemblies(config):
 def load_hifi_reads(config):
     hifi_reads_dir = Path(config["hifi_reads_dir"]).resolve()
 
-    hifi_reads = sorted(
-        hifi_reads_dir.glob("*.hifi_reads.fastq.gz")
-    )
+    hifi_reads = sorted(hifi_reads_dir.glob("*.hifi_reads.fastq.gz"))
 
     if len(hifi_reads) == 0:
         raise ValueError(f"No HiFi read files found in {hifi_reads_dir}")
@@ -95,9 +90,7 @@ def load_hic_reads(config):
             else:
                 missing.append(str(p))
         if missing:
-            raise ValueError(
-                f"Hi-C {label} files do not exist:\n" + "\n".join(missing)
-            )
+            raise ValueError(f"Hi-C {label} files do not exist:\n" + "\n".join(missing))
         return resolved
 
     # --- Layout 1: explicit hic_r1 / hic_r2 ---
@@ -138,11 +131,13 @@ def load_hic_reads(config):
 
         # Match common R1/R2 naming: *_R1*.f*q.gz and *_R2*.f*q.gz
         r1_files = sorted(
-            f for pattern in ("*_R1*.fastq.gz", "*_R1*.fq.gz")
+            f
+            for pattern in ("*_R1*.fastq.gz", "*_R1*.fq.gz")
             for f in hic_dir.glob(pattern)
         )
         r2_files = sorted(
-            f for pattern in ("*_R2*.fastq.gz", "*_R2*.fq.gz")
+            f
+            for pattern in ("*_R2*.fastq.gz", "*_R2*.fq.gz")
             for f in hic_dir.glob(pattern)
         )
 
@@ -244,3 +239,16 @@ def build_busco_lineage_by_sample(assemblies, valid_lineages, default_lineage):
         lineage_by_sample[sample] = lineage
 
     return lineage_by_sample
+
+
+def build_calcuts_extra(config, test_id):
+    """Manual calcuts flags for a purge_dups test; produces a 6-field cutoffs file."""
+    test = config["purge_dups_tests"][test_id]
+
+    missing = {"low", "mid", "high"} - set(test)
+    if missing:
+        raise ValueError(
+            f"purge_dups_tests[{test_id}] is missing: {', '.join(sorted(missing))}"
+        )
+
+    return f"-l {test['low']} -m {test['mid']} -u {test['high']}"

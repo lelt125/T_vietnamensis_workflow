@@ -13,28 +13,36 @@ busco:
   lineage: vertebrata_odb12
   valid_lineages_file: databases/busco/busco_lineages.txt
   download_path: databases/busco
+  extra: ""
   threads: 32
-  mem_gb: 200
-  java_heap: 128g
+  mem_gb: 250
 
 meryl:
   kmer: 31
 
-  count_threads: 32
+  count_threads: 48
   count_mem_gb: 300
 
-  merge_threads: 64
+  merge_threads: 16
   merge_mem_gb: 600
 
+  # assembly database (built explicitly so merqury never counts it itself)
+  asm_count_threads: 64
+  asm_count_mem_gb: 800          # high, to minimise batch count
+
+  # relative tolerance on the present-kmer assertion
+  reads_tolerance: 0.0005        # HiFi reads: no Ns expected, so near-exact
+  asm_tolerance: 0.005           # assemblies: Ns and sub-k contigs cause small drift
+
 merqury:
-  threads: 90
-  mem_gb: 800
+  threads: 64
+  mem_gb: 600
   java_heap: 64g
 
 minimap2:
   threads: 28
   mem_gb: 270
-  index_size: "24G"
+  index_size: "32G"
   pigz_threads: 4
 
   sort_threads: 8
@@ -48,29 +56,26 @@ purge_dups:
 
   self_align_threads: 48
   self_align_mem_gb: 500
-  self_align_preset: asm10
+  self_align_presets:
+    - asm20
   self_align_aligner: mm2plus
   self_align_extra: ""
+  self_align_index_size: "32G"
 
-  purge_threads: 12
-  purge_mem_gb: 600
+  purge_threads: 1
+  purge_mem_gb: 400
 
-  purge_extra: "-2"
-  get_seqs_mode: "-e"
+  purge_extra: "-2 -f 0.6"
+  calcuts_extra: ""
+  get_seqs_mode: "" # with -e then only trims duplications at contig ends
   pigz_threads: 4
 
 purge_dups_tests:
-  cutoff_5_15_90:
-    low: 5
-    mid: 15
-    high: 90
-    get_seqs_mode: ""
+  cutoff_6_17_70:
+    low: 6
+    mid: 17
+    high: 70
 
-  cutoff_5_30_90:
-    low: 5
-    mid: 30
-    high: 90
-    get_seqs_mode: ""
 
 mosdepth:
   threads: 16

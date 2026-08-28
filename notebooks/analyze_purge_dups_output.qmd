@@ -1,0 +1,583 @@
+---
+title: "purge_dups `dups.bed` investigation"
+subtitle: "*Tylototriton vietnamensis* — what purge_dups actually flagged"
+author: "Linh"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: show
+    df-print: paged
+    fig-width: 9
+    fig-height: 5
+execute:
+  warning: false
+  message: false
+jupyter: python3
+---
+
+## Purpose
+
+`get_seqs` can only remove what `purge_dups` wrote into `dups.bed`. Enabling
+internal cuts (`get_seqs_mode: ""`) barely changed the output, which points to
+the constraint being upstream — in what `purge_dups` classified, not in how
+`get_seqs` applied it.
+
+This notebook examines a **single run** and asks:
+
+1. What record **types** are in `dups.bed`, and how many bases does each cover?
+2. How much is `HAPLOTIG` (haplotypic duplication) versus `HIGHCOV`/`JUNK`
+   (repeat and low-coverage removal)?
+3. Is flagged sequence concentrated in short contigs?
+4. Do flagged contigs sit at roughly half depth, or at full depth?
+
+Question 4 is the decisive one. If duplicated copies split reads, they appear at
+~11x against a ~22x background and `purge_dups` has a signal to act on. If they
+sit at ~22x, no cutoff choice will help.
+
+## `dups.bed` format
+
+From `purge_dups.c` (line 86), each record is printed one of two ways:
+
+```c
+~dp[i].psn
+  ? fprintf(stdout, "%s\t%u\t%u\t%s\t%s\n",
+            name, dp[i].s - 1, dp[i].e, dup_type_s[dp[i].tp], partner_name)
+  : fprintf(stdout, "%s\t%u\t%u\t%s\n",
+            name, dp[i].s,     dp[i].e, dup_type_s[dp[i].tp]);
+```
+
+**5 columns** when a best-match partner contig exists, **4 columns** when it
+doesn't. Note the off-by-one: `s - 1` in the 5-column branch, `s` in the
+4-column branch. Types are `JUNK`, `HIGHCOV`, `HAPLOTIG`, `PRIMARY`, `REPEAT`,
+`OVLP`, `UNKNOWN`.
+
+What each type means for this analysis:
+
+| type | trigger | relevant to haplotypic duplication? |
+|---|---|---|
+| `HAPLOTIG` | half depth **and** aligns to a full-depth contig | **yes** |
+| `HIGHCOV` | depth above `high` cutoff | no — collapsed repeats |
+| `JUNK` | depth below `low` cutoff | no — contamination, artifacts |
+| `OVLP` | overlapping contig ends | marginal |
+| `REPEAT` | repetitive, no dominant band | no |
+
+Whole-contig removals (`JUNK`, `HIGHCOV`) come from `flt_by_tp` and span the
+full contig length; region-level records come from the alignment pass.
+
+## Setup
+
+```{python}
+#| label: setup
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+mpl.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "axes.grid": True,
+        "grid.alpha": 0.25,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+    }
+)
+
+RESULTS = Path(
+    "data/2024_Tylototriton_vietnamensis_Wild_Genomes/Linh_Analysis/results/production_run"
+)
+SAMPLE = "03_hifi_asm_filtered_fcs_adaptor"
+PRESET = "asm20"
+TEST_ID = "cutoff_6_17_70"
+
+SAMPLE_DIR = RESULTS / "purge_dups" / SAMPLE
+RUN_DIR = SAMPLE_DIR / PRESET / TEST_ID
+COV_DIR = SAMPLE_DIR / "coverage"
+
+BED_PATH = RUN_DIR / "dups.bed"
+CUTOFFS_PATH = RUN_DIR / "cutoffs"
+BASE_COV_PATH = COV_DIR / "PB.base.cov"
+PB_STAT_PATH = COV_DIR / "PB.stat"
+
+BED_COLS = ["contig", "start", "end", "type", "partner"]
+
+for path in (BED_PATH, CUTOFFS_PATH, BASE_COV_PATH, PB_STAT_PATH):
+    status = "ok      " if path.exists() else "MISSING "
+    print(f"{status}{path}")
+```
+
+### Cutoffs actually used
+
+`purge_dups` reads only fields 0, 3 and 5 of the cutoffs file
+(`low_cut`, `dip_cut`, `high_cut`). The rest are padding.
+
+```{python}
+#| label: cutoffs
+raw_cutoffs = CUTOFFS_PATH.read_text().strip()
+fields = raw_cutoffs.split("\t")
+
+print(f"raw:    {raw_cutoffs!r}")
+print(f"fields: {len(fields)}  (must be 6)")
+
+LOW_CUT, DIP_CUT, HIGH_CUT = int(fields[0]), int(fields[3]), int(fields[5])
+print(f"\nlow  = {LOW_CUT}\ndip  = {DIP_CUT}\nhigh = {HIGH_CUT}")
+```
+
+The depth bands these define, from `cal_cov_4reg`:
+
+```{python}
+#| label: bands
+pd.DataFrame(
+    [
+        ["JUNK", f"<= {LOW_CUT}", "removed"],
+        ["HAPLOTIG", f"{LOW_CUT + 1} to {DIP_CUT}", "candidate for removal"],
+        ["PRIMARY", f"{DIP_CUT + 1} to {HIGH_CUT}", "kept; target for removals"],
+        ["REPEAT / HIGHCOV", f"> {HIGH_CUT}", "removed as collapsed repeat"],
+    ],
+    columns=["class", "depth band", "fate"],
+)
+```
+
+## Loading
+
+```{python}
+#| label: load-dups
+def load_dups_bed(path: Path, preset: str, test_id: str) -> pd.DataFrame:
+    """Read a dups.bed, tolerating the 4- vs 5-column variants."""
+    df = pd.read_csv(
+        path,
+        sep="\t",
+        header=None,
+        names=BED_COLS,
+        dtype={"contig": str, "type": str, "partner": str},
+        engine="python",
+    )
+    df["length"] = df["end"] - df["start"]
+    df["preset"] = preset
+    df["test_id"] = test_id
+    return df
+
+
+dups = load_dups_bed(BED_PATH, PRESET, TEST_ID)
+print(f"{len(dups):,} records — {PRESET} / {TEST_ID}")
+dups.head(10)
+```
+
+### Per-contig depth and length from `PB.base.cov`
+
+`PB.base.cov` holds per-contig coverage intervals, so contig lengths and mean
+depths come from the same source `purge_dups` itself used — no mosdepth run and
+no BAM required.
+
+```{python}
+#| label: parse-base-cov
+def parse_base_cov(path: Path) -> pd.DataFrame:
+    """Mean depth and covered length per contig from pbcstat's PB.base.cov."""
+    rows = []
+    ctg = None
+    weighted = 0.0
+    covered = 0
+
+    with path.open() as fh:
+        for line in fh:
+            if line.startswith(">"):
+                if ctg is not None and covered > 0:
+                    rows.append((ctg, covered, weighted / covered))
+                ctg = line[1:].strip().split()[0]
+                weighted, covered = 0.0, 0
+                continue
+
+            fields = line.split()
+            if len(fields) != 3:
+                continue
+            start, end, depth = int(fields[0]), int(fields[1]), float(fields[2])
+            width = end - start
+            weighted += width * depth
+            covered += width
+
+    if ctg is not None and covered > 0:
+        rows.append((ctg, covered, weighted / covered))
+
+    return pd.DataFrame(rows, columns=["contig", "length", "mean_depth"])
+
+
+contigs = parse_base_cov(BASE_COV_PATH)
+ASSEMBLY_GB = contigs["length"].sum() / 1e9
+
+print(f"{len(contigs):,} contigs, {ASSEMBLY_GB:.2f} Gb")
+contigs[["length", "mean_depth"]].describe().round(2)
+```
+
+## 1. What is in `dups.bed`?
+
+```{python}
+#| label: type-summary
+by_type = (
+    dups.groupby("type")
+    .agg(
+        records=("length", "size"),
+        total_mb=("length", lambda s: s.sum() / 1e6),
+        contigs=("contig", "nunique"),
+        median_kb=("length", lambda s: s.median() / 1e3),
+    )
+    .sort_values("total_mb", ascending=False)
+    .round(2)
+)
+by_type["pct_of_assembly"] = (100 * by_type["total_mb"] / (ASSEMBLY_GB * 1e3)).round(3)
+by_type
+```
+
+```{python}
+#| label: fig-type-composition
+#| fig-cap: "Flagged bases by record type. Only HAPLOTIG reflects haplotypic duplication."
+totals = dups.groupby("type")["length"].sum().div(1e6).sort_values()
+
+fig, ax = plt.subplots(figsize=(9, max(2.5, 0.5 * len(totals) + 1.5)))
+colors = ["tab:red" if t == "HAPLOTIG" else "tab:gray" for t in totals.index]
+ax.barh(totals.index, totals.values, color=colors)
+ax.set_xlabel("Flagged sequence (Mb)")
+for i, value in enumerate(totals.values):
+    ax.text(value, i, f" {value:,.0f}", va="center", fontsize=9)
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: haplotig-headline
+hap_bp = dups.loc[dups["type"] == "HAPLOTIG", "length"].sum()
+all_bp = dups["length"].sum()
+
+print(f"assembly            {ASSEMBLY_GB:>8.2f} Gb")
+print(
+    f"flagged, all types  {all_bp / 1e9:>8.3f} Gb"
+    f"  ({100 * all_bp / (ASSEMBLY_GB * 1e9):.2f}% of assembly)"
+)
+print(
+    f"flagged, HAPLOTIG   {hap_bp / 1e9:>8.3f} Gb"
+    f"  ({100 * hap_bp / (ASSEMBLY_GB * 1e9):.2f}% of assembly)"
+)
+if all_bp:
+    print(f"\nHAPLOTIG share of flagged sequence: {100 * hap_bp / all_bp:.1f}%")
+```
+
+::: {.callout-note}
+If `HAPLOTIG` is a small share while BUSCO Duplicated was ~70%, `purge_dups` is
+not finding the duplication BUSCO sees. That gap is the thing to explain, and
+sections 2–3 test the leading hypothesis.
+:::
+
+## 2. Is flagged sequence concentrated in short contigs?
+
+The read-depth histogram is weighted by assembly *position*, so a gene-dense
+duplicated fraction confined to short contigs would be invisible in it. That
+would reconcile a unimodal ~22x histogram with 70% BUSCO duplication, and would
+also explain why retaining the top 20% longest contigs collapsed duplication to
+~7%.
+
+```{python}
+#| label: length-bins
+BINS = [0, 50_000, 100_000, 500_000, 1_000_000, 5_000_000, np.inf]
+LABELS = ["<50kb", "50-100kb", "100-500kb", "500kb-1Mb", "1-5Mb", ">=5Mb"]
+
+contigs["len_bin"] = pd.cut(contigs["length"], bins=BINS, labels=LABELS, right=False)
+
+depth_bins = (
+    contigs.groupby("len_bin", observed=True)
+    .agg(
+        n_contigs=("contig", "size"),
+        total_gb=("length", lambda s: s.sum() / 1e9),
+        mean_depth=("mean_depth", "mean"),
+        median_depth=("mean_depth", "median"),
+    )
+    .reset_index()
+    .round(2)
+)
+depth_bins["pct_of_assembly"] = (100 * depth_bins["total_gb"] / ASSEMBLY_GB).round(1)
+depth_bins
+```
+
+::: {.callout-important}
+This table is the decisive one.
+
+- **Short contigs near ~11x, long contigs near ~22x** — allelic copies *are*
+  splitting reads. Duplication is coverage-separable but confined to a small
+  fraction of assembly length. A lower `dip` cutoff aimed at that population
+  should purge effectively.
+- **All bins near ~22x** — the copies are not splitting reads. `purge_dups` has
+  no coverage signal at any cutoff. That is the structural-limitation result,
+  and it is now demonstrated on correctly mapped single-batch data.
+:::
+
+```{python}
+#| label: flagged-by-bin
+flagged_per_contig = (
+    dups.groupby(["contig", "type"])["length"].sum().rename("flagged_bp").reset_index()
+)
+
+joined = flagged_per_contig.merge(contigs, on="contig", how="left")
+
+flagged_bins = (
+    joined.groupby(["len_bin", "type"], observed=True)["flagged_bp"]
+    .sum()
+    .div(1e6)
+    .unstack(fill_value=0)
+    .round(1)
+)
+flagged_bins
+```
+
+## 3. Depth versus contig length
+
+```{python}
+#| label: fig-depth-by-length
+#| fig-cap: "Mean per-contig depth against contig length. Two horizontal bands would indicate coverage-separable allelic pairs."
+hap_contig_names = set(dups.loc[dups["type"] == "HAPLOTIG", "contig"])
+hap_contigs = contigs[contigs["contig"].isin(hap_contig_names)]
+
+fig, ax = plt.subplots(figsize=(9, 5.5))
+ax.scatter(
+    contigs["length"],
+    contigs["mean_depth"],
+    s=4,
+    alpha=0.15,
+    color="tab:gray",
+    label="all contigs",
+    rasterized=True,
+)
+if len(hap_contigs):
+    ax.scatter(
+        hap_contigs["length"],
+        hap_contigs["mean_depth"],
+        s=8,
+        alpha=0.55,
+        color="tab:red",
+        label="flagged HAPLOTIG",
+        rasterized=True,
+    )
+
+ax.axhline(DIP_CUT, ls="-", lw=1.2, color="tab:green", label=f"dip = {DIP_CUT}")
+ax.axhline(LOW_CUT, ls=":", lw=1, color="tab:red", label=f"low = {LOW_CUT}")
+ax.axhline(HIGH_CUT, ls=":", lw=1, color="tab:cyan", label=f"high = {HIGH_CUT}")
+
+ax.set_xscale("log")
+ax.set_xlabel("Contig length (bp, log scale)")
+ax.set_ylabel("Mean read depth")
+ax.set_ylim(0, min(80, contigs["mean_depth"].quantile(0.999)))
+ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: fig-depth-hist-weighted
+#| fig-cap: "Sequence mass by depth, split by contig length class."
+bins = np.arange(0, 81, 1)
+short = contigs[contigs["length"] < 100_000]
+long_contigs = contigs[contigs["length"] >= 1_000_000]
+
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.hist(
+    long_contigs["mean_depth"].clip(0, 80),
+    bins=bins,
+    weights=long_contigs["length"] / 1e6,
+    alpha=0.65,
+    color="tab:blue",
+    label=">=1Mb contigs",
+)
+ax.hist(
+    short["mean_depth"].clip(0, 80),
+    bins=bins,
+    weights=short["length"] / 1e6,
+    alpha=0.7,
+    color="tab:orange",
+    label="<100kb contigs",
+)
+ax.axvline(DIP_CUT, ls="-", lw=1.2, color="tab:green")
+ax.set_xlabel("Mean contig depth")
+ax.set_ylabel("Sequence (Mb)")
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: fig-flagged-depth
+#| fig-cap: "Depth distribution: contigs flagged HAPLOTIG versus the rest."
+retained = contigs[~contigs["contig"].isin(hap_contig_names)]
+
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.hist(
+    retained["mean_depth"].clip(0, 80),
+    bins=bins,
+    weights=retained["length"] / 1e6,
+    alpha=0.6,
+    color="tab:blue",
+    label="not flagged",
+)
+if len(hap_contigs):
+    ax.hist(
+        hap_contigs["mean_depth"].clip(0, 80),
+        bins=bins,
+        weights=hap_contigs["length"] / 1e6,
+        alpha=0.75,
+        color="tab:red",
+        label="flagged HAPLOTIG",
+    )
+ax.axvline(DIP_CUT, ls="-", lw=1.2, color="tab:green")
+ax.set_xlabel("Mean contig depth")
+ax.set_ylabel("Sequence (Mb)")
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+## 4. Partner structure
+
+The 5-column records name the contig a flagged region best matched. Haplotigs
+should be shorter than their partners — a short duplicate removed against a
+longer primary.
+
+```{python}
+#| label: partner-analysis
+paired = dups[dups["partner"].notna()].copy()
+print(
+    f"{len(paired):,} of {len(dups):,} records name a partner "
+    f"({100 * len(paired) / max(len(dups), 1):.1f}%)"
+)
+
+if len(paired):
+    lengths = contigs[["contig", "length"]]
+    stats = paired.merge(
+        lengths.rename(columns={"contig": "partner", "length": "partner_length"}),
+        on="partner",
+        how="left",
+    ).merge(
+        lengths.rename(columns={"length": "contig_length"}),
+        on="contig",
+        how="left",
+    )
+    stats["length_ratio"] = stats["contig_length"] / stats["partner_length"]
+
+    display(
+        stats.groupby("type")
+        .agg(
+            n=("length_ratio", "size"),
+            median_ratio=("length_ratio", "median"),
+            median_query_kb=("contig_length", lambda s: s.median() / 1e3),
+            median_partner_kb=("partner_length", lambda s: s.median() / 1e3),
+        )
+        .round(2)
+    )
+```
+
+A `median_ratio` well below 1 is the expected haplotig-onto-primary pattern.
+Near 1 suggests pairs of similar size, which is more consistent with paralogs
+than with allelic copies.
+
+## 5. Read-depth histogram with cutoffs
+
+```{python}
+#| label: fig-pb-stat
+#| fig-cap: "Assembly-wide read-depth histogram from PB.stat, with the cutoffs applied in this run."
+pb = pd.read_csv(
+    PB_STAT_PATH, sep="\t", header=None, usecols=[0, 1], names=["cov", "n"]
+)
+
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.plot(pb["cov"], pb["n"], lw=1.6, color="tab:blue")
+
+for value, color, label in [
+    (LOW_CUT, "tab:red", "low"),
+    (DIP_CUT, "tab:green", "dip"),
+    (HIGH_CUT, "tab:cyan", "high"),
+]:
+    ax.axvline(value, lw=1, color=color)
+    ax.text(
+        value + 0.7,
+        ax.get_ylim()[1] * 0.92,
+        f"{label}={value}",
+        color=color,
+        fontsize=9,
+        rotation=90,
+        va="top",
+    )
+
+ax.set_xlim(0, min(100, pb["cov"].max()))
+ax.set_xlabel("Read fold-coverage")
+ax.set_ylabel("Number of assembly positions")
+plt.tight_layout()
+plt.show()
+
+peak = pb.loc[pb["n"].idxmax(), "cov"]
+below_dip = pb.loc[pb["cov"] <= DIP_CUT, "n"].sum() / 1e9
+above_high = pb.loc[pb["cov"] > HIGH_CUT, "n"].sum() / 1e9
+
+print(f"histogram peak at {peak}x")
+print(f"positions <= dip  ({DIP_CUT}): {below_dip:.2f} Gb")
+print(f"positions >  high ({HIGH_CUT}): {above_high:.2f} Gb")
+```
+
+## 6. Sanity checks
+
+```{python}
+#| label: sanity
+issues = {
+    "records": len(dups),
+    "negative_or_zero_length": int((dups["length"] <= 0).sum()),
+    "unknown_type": int((dups["type"] == "UNKNOWN").sum()),
+    "contigs_not_in_PB.base.cov": int((~dups["contig"].isin(contigs["contig"])).sum()),
+    "partners_not_in_PB.base.cov": int(
+        (~dups.loc[dups["partner"].notna(), "partner"].isin(contigs["contig"])).sum()
+    ),
+}
+pd.Series(issues, name="count").to_frame()
+```
+
+::: {.callout-tip}
+`negative_or_zero_length` should be 0. The two `not_in_PB.base.cov` counts
+should be 0 — non-zero means `dups.bed` and `PB.base.cov` came from different
+assemblies, which would invalidate everything above.
+:::
+
+## Interpretation
+
+Fill in from the tables above:
+
+- Run examined: `{python} f"{PRESET} / {TEST_ID}"`
+- Cutoffs: low `{python} LOW_CUT`, dip `{python} DIP_CUT`, high `{python} HIGH_CUT`
+- HAPLOTIG share of flagged sequence: \_\_\_\_\_ %
+- Median depth, contigs <100 kb: \_\_\_\_\_ x
+- Median depth, contigs >=1 Mb: \_\_\_\_\_ x
+
+Two candidate conclusions:
+
+**Duplication is coverage-separable but length-confined.** Short contigs sit at
+roughly half the depth of long ones; HAPLOTIG bases are non-trivial; the
+scatter shows two bands. Implication: a `dip` cutoff targeting the short-contig
+population should purge effectively, and the top-20%-longest filter worked
+because it removed exactly that population.
+
+**Duplication is not coverage-separable.** All length bins sit near the same
+depth; HAPLOTIG bases are negligible; the scatter shows one band. Implication:
+`purge_dups` cannot act on this assembly at any cutoff. This is supported
+independently by the null result from `get_seqs_mode: ""` and by `calcuts`
+fitting a two-peak ploidy model inconsistent with ~23x sequencing depth.
+
+To extend this to a second run, load another `dups.bed` and concatenate:
+
+```python
+other = load_dups_bed(
+    SAMPLE_DIR / "asm20" / "cutoff_5_17_70_with_e" / "dups.bed",
+    "asm20",
+    "cutoff_5_17_70_with_e",
+)
+both = pd.concat([dups, other], ignore_index=True)
+```
+
+Results under `asm5_purge_dups/` and `asm10_purge_dups/` predate the
+single-batch mapping fix and are not comparable to those under `asm10/` and
+`asm20/`.

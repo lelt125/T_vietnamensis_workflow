@@ -2,6 +2,6 @@ snakemake -s genome_qc.smk --configfile config_test.yaml --cores 12 --resources 
  
 snakemake -s purge_dups.smk --configfile config_test.yaml --cores 12 --resources mem_gb=30 -p --use-conda -n
 
-snakemake -s genome_qc.smk --configfile config_production.yaml --cores 64 --resources mem_gb=600 -p -n
+snakemake -s workflow/genome_qc.smk --configfile config_production.yaml --sdm conda --cores 40 --resources mem_gb=300 -p -n
 
-snakemake -s purge_dups.smk --configfile config_production.yaml --cores 64 --resources mem_gb=600 -p --use-conda -n
+snakemake -s workflow/purge_dups.smk --configfile config_production.yaml --sdm conda --cores 64 --resources mem_gb=600 -p -n

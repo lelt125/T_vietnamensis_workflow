@@ -1,0 +1,7 @@
+# workflow/envs/purge_dups.yaml
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python >=3.11
+  - purge_dups =1.2.6
