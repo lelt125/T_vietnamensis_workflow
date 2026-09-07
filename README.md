@@ -47,9 +47,9 @@ This repository documents the assembly QC and duplicate-purging snakemake workfl
 ```
 
 ## Requirements
-- Snakemake ≥ 9.x
-- conda / mamba
-- uv (Python environment management, optional)
+- conda / mamba (per-rule tool environments via `--sdm conda`)
+- uv (Python environment management for the analysis/notebook stack)
+- quarto (for running and viewing Quarto notebooks)
 
 Command-line tools invoked by the rules (installed via conda environments per rule, or available on $PATH):
 
@@ -101,16 +101,17 @@ Each tool gets its own block for `threads`, `mem_gb`, and (where relevant) `java
 `purge_dups_tests` defines named cutoff sets (`low` / `mid` / `high`, optional `get_seqs_mode`), letting you run several manual cutoff configurations in parallel. Manual cutoffs are used here because automatic valley-finding is unreliable on this genome's coverage histogram.
 
 ## Usage
+### Snakemake pipeline
 For each section, adjust the number of processing cores and RAM memory according to your
 own requirements. Remove the -n flag to begin the actual run.
 
-### Run genome QC (seqkit, BUSCO, Merqury, mosdepth coverage)
+#### Run genome QC (seqkit, BUSCO, Merqury, mosdepth coverage)
 ```
 snakemake -s workflow/genome_qc.smk --configfile config_production.yaml --sdm conda \
     --cores 40 --resources mem_gb=300 -p -n
 ```
 
-### Run duplicate purging across all configured cutoff tests
+#### Run duplicate purging across all configured cutoff tests
 ```
 snakemake -s workflow/purge_dups.smk --configfile config_production.yaml --sdm conda \
     --cores 96 --resources mem_gb=900 -p -n
