@@ -8,6 +8,7 @@ dependencies:
   - purge_dups=1.2.5
   - minimap2
   - repeatmodeler
+  - hifiasm
   - yahs=1.2.2
   - pairtools
   - seqkit
