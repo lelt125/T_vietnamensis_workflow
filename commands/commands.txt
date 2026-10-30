@@ -1,0 +1,36 @@
+# Contig-level genome assembly
+hifiasm -o T_vietnamensis -t 32 ${HIFI_READS_DIR}/*.hifi_reads.fastq.gz
+awk '/^S/{print ">"$2; print $3}' T_vietnamensis.bp.p_ctg.gfa > T_vietnamensis.p_ctg.fa
+
+# Index the contigs after removing contaminants, purging duplicates with purge_dups.smk
+# and filtering short contigs
+samtools faidx ${CONTIGS}
+cut -f1,2 ${CONTIGS}.fai > contigs.chrom.sizes      # needed by pairtools parse
+bwa-mem2 index -p ${CONTIGS} ${CONTIGS} > bwa_mem2_index.log
+
+# Map, parse to pairs, deduplicate
+mkdir -p tmp_pairtools
+
+bwa-mem2 mem -5SP -T0 -t ${THREADS} ${CONTIGS} ${HIC_R1} ${HIC_R2} \
+    2> hic_bwa_mem2.log \
+| pairtools parse \
+    --min-mapq 10 \
+    --walks-policy 5unique \
+    --max-inter-align-gap 30 \
+    --chroms-path contigs.chrom.sizes \
+    --nproc-in 8 --nproc-out 8 \
+| pairtools sort \
+    --tmpdir tmp_pairtools \
+    --nproc 16 \
+| pairtools dedup \
+    --output-stats hic_pairtools.dedup_stats.txt \
+    --nproc-in 8 --nproc-out 8 \
+| pairtools split \
+    --output-pairs hic_to_contigs.pairs.gz \
+    --output-sam - \
+| samtools view -@ 16 -b -o hic_to_contigs.pairtools.bam -
+
+# Scaffolding with YaHS (Omni-C: no restriction motif)
+yahs -o yahs_out ${CONTIGS} hic_to_contigs.pairtools.bam > yahs.log 2>&1
+
+# Use genome_qc.smk to assess genome assembly
