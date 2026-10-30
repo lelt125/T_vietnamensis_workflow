@@ -1,6 +1,6 @@
 # Tylototriton vietnamensis genome assembly pipeline
 
-Assembly pipeline for *de novo* genome assembly, scaffolding and quality control of *Tylototriton vietnamensis* (Vietnamese crocodile newt), an endangered, CITES-listed and conservation-priority salamander. The pipeline covers raw PacBio HiFi reads through assembly, quality checks, duplicate purging and scaffolding.
+Assembly pipeline for *de novo* genome assembly, scaffolding and quality control of *Tylototriton vietnamensis* (Vietnamese crocodile newt), an endemic, CITES-listed and conservation-priority salamander. The pipeline covers raw PacBio HiFi reads through assembly, quality checks, duplicate purging and scaffolding.
 
 ## Overview
 - Species: *Tylototriton vietnamensis* (Vietnamese crocodile newt)
@@ -8,43 +8,7 @@ Assembly pipeline for *de novo* genome assembly, scaffolding and quality control
 - Sequencing: PacBio HiFi (~23x coverage)
 - Workflow engine: Snakemake (9.x), config-driven, conda-managed environments
 
-This repository documents the assembly QC and duplicate-purging snakemake workflows. Other stages referenced in the broader project (contaminant read filtering, assembly and scaffolding) are included as commands.
-
-## Repository structure
-```
-.
-├── config_production.yaml
-├── config_test.yaml
-├── notebooks                           # exploratory/diagnostic analyses, not part of the pipeline
-│   ├── analyze_contaminants.qmd
-│   ├── analyze_purge_dups_output.qmd
-│   ├── investigate_duplicates.ipynb
-│   └── sum_assembly_stats.qmd
-├── pyproject.toml
-├── _quarto.yml
-├── README.md
-├── scripts                             # standalone helper scripts used by Snakemake rules
-│   ├── assert_meryl_kmers.py
-│   ├── hist_plot.py
-│   ├── __init__.py
-│   ├── summarize_benchmarks.py
-│   └── summarizer.py
-├── uv.lock
-└── workflow                            # Snakemake rules, configs, and conda envs
-    ├── envs
-    │   ├── busco.yaml
-    │   ├── genome_assessment_minimal.yaml
-    │   ├── genome_assessment.yaml
-    │   ├── minimap2.yaml
-    │   ├── mm2plus.yaml
-    │   └── purge_dups.yaml
-    ├── filter_contaminant_reads.smk
-    ├── genome_qc.smk
-    ├── hifiasm_assembly.smk
-    ├── purge_dups.smk
-    ├── rules
-    │   └── common_config_files.smk
-```
+Assembly QC and duplicate purging run as Snakemake workflows. Contig assembly (hifiasm) and Hi-C scaffolding (bwa-mem2 + pairtools + YaHS) are documented as
 
 ## Requirements
 - conda / mamba (per-rule tool environments via `--sdm conda`)
@@ -55,12 +19,16 @@ Command-line tools invoked by the rules (installed via conda environments per ru
 
 | Stage | Tools |
 |---|---|
+| Contig assembly | `hifiasm` |
+| Contaminant screening | `FCS-GX`, `FCS-adaptor` |
+| Duplicate purging | `purge_dups` (`pbcstat`, `calcuts`, `split_fa`, `purge_dups`, `get_seqs`) |
+| Hi-C mapping | `bwa-mem2`, `pairtools`, `samtools` |
+| Scaffolding | `yahs` |
 | Assembly stats | `seqkit` |
 | Completeness | `busco` |
 | K-mer QC | `meryl`, `merqury.sh` |
 | Read mapping | `minimap2` / `mm2plus`, `samtools`, `pigz` |
 | Coverage | `mosdepth` |
-| Duplicate purging | `purge_dups` (`pbcstat`, `calcuts`, `split_fa`, `purge_dups`, `get_seqs`) |
 
 ## Configuration
 
@@ -87,10 +55,6 @@ Outputs go to `{results_base}/{run_name}`.
 
 QC steps are toggled per row, not globally — so a raw hifiasm assembly and a purged version can run through different QC subsets.
 
-### HiFi reads
-
-`hifi_reads_dir` points to a directory of chunked FASTQ files (`*.hifi_reads.fastq.gz`). Each file is one "chunk," parallelized independently for mapping and k-mer counting.
-
 ### Resource blocks
 
 Each tool gets its own block for `threads`, `mem_gb`, and (where relevant) `java_heap`:
@@ -101,6 +65,46 @@ Each tool gets its own block for `threads`, `mem_gb`, and (where relevant) `java
 `purge_dups_tests` defines named cutoff sets (`low` / `mid` / `high`, optional `get_seqs_mode`), letting you run several manual cutoff configurations in parallel. Manual cutoffs are used here because automatic valley-finding is unreliable on this genome's coverage histogram.
 
 ## Usage
+### Assembly and scaffolding commands
+```
+# Contig-level genome assembly
+hifiasm -o T_vietnamensis -t 32 ${HIFI_READS_DIR}/*.hifi_reads.fastq.gz
+awk '/^S/{print ">"$2; print $3}' T_vietnamensis.bp.p_ctg.gfa > T_vietnamensis.p_ctg.fa
+
+# Index the contigs after removing contaminants, purging duplicates with purge_dups.smk
+# and filtering short contigs
+samtools faidx ${CONTIGS}
+cut -f1,2 ${CONTIGS}.fai > contigs.chrom.sizes      # needed by pairtools parse
+bwa-mem2 index -p ${CONTIGS} ${CONTIGS} > bwa_mem2_index.log
+
+# Map, parse to pairs, deduplicate
+mkdir -p tmp_pairtools
+
+bwa-mem2 mem -5SP -T0 -t ${THREADS} ${CONTIGS} ${HIC_R1} ${HIC_R2} \
+    2> hic_bwa_mem2.log \
+| pairtools parse \
+    --min-mapq 10 \
+    --walks-policy 5unique \
+    --max-inter-align-gap 30 \
+    --chroms-path contigs.chrom.sizes \
+    --nproc-in 8 --nproc-out 8 \
+| pairtools sort \
+    --tmpdir tmp_pairtools \
+    --nproc 16 \
+| pairtools dedup \
+    --output-stats hic_pairtools.dedup_stats.txt \
+    --nproc-in 8 --nproc-out 8 \
+| pairtools split \
+    --output-pairs hic_to_contigs.pairs.gz \
+    --output-sam - \
+| samtools view -@ 16 -b -o hic_to_contigs.pairtools.bam -
+
+# Scaffolding with YaHS (Omni-C: no restriction motif)
+yahs -o yahs_out ${CONTIGS} hic_to_contigs.pairtools.bam > yahs.log 2>&1
+
+# Use genome_qc.smk to assess genome assembly
+```
+
 ### Snakemake pipeline
 For each section, adjust the number of processing cores and RAM memory according to your
 own requirements. Remove the -n flag to begin the actual run.
